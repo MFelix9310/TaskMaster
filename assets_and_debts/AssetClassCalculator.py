@@ -1,3 +1,6 @@
+"""
+Module for calculating asset values and managing asset classes.
+"""
 from finsim.assets_and_debts.Holdings import Holdings
 import finsim.assets_and_debts.AssetClass as ac
 from finsim.SharedEnumsAndConstants import AssetType
@@ -6,7 +9,7 @@ from finsim.assets_and_debts.CapitalMarkets import CapitalMarkets
 
 class AssetClassCalculator:
     """
-    Class to calculate the value and interest accrued for each holding.
+    Class for calculating the value and accumulated interest for each holding.
     """
 
     def __init__(self, model, params, holdings: Holdings):
@@ -22,14 +25,13 @@ class AssetClassCalculator:
         self.setup_holdings()
 
     def update_parameters(self, new_params):
-        """Actualiza los parámetros del calculador de activos"""
+        """Updates the parameters for the asset calculator"""
         try:
-            print(f"[DEBUG] Updating AssetClassCalculator parameters: {new_params}")
+            print(f"[DEBUG] Updating parameters: {new_params}")
             if 'capital_markets_group' in new_params:
                 self._market_conditions.update(new_params['capital_markets_group'])
                 self.capital_markets.update_conditions(self._market_conditions)
 
-            # Actualizar los parámetros específicos de cada clase de activo
             for asset_type, asset_class in self.asset_classes.items():
                 class_key = f"ac_{asset_type.value.lower()}_group"
                 if class_key in new_params:
@@ -38,7 +40,7 @@ class AssetClassCalculator:
 
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to update AssetClassCalculator parameters: {str(e)}")
+            print(f"[ERROR] Error updating AssetClassCalculator parameters: {str(e)}")
             return False
 
     def setup_capital_markets(self):
@@ -47,51 +49,50 @@ class AssetClassCalculator:
 
     def setup_asset_classes(self):
         """
-        Create one object for each of the subclasses of AssetClass and add it to the asset_classes dictionary.
+        Creates an object for each AssetClass subclass and adds it to the asset_classes dictionary.
         """
         rng = self.model.random
         self.asset_classes[AssetType.HOUSE] = ac.AssetClass_House(self.params["ac_house_group"], rng)
         self.asset_classes[AssetType.OTHER_REAL_ESTATE] = ac.AssetClass_OtherRealEstate(
             self.params["ac_otherrealestate_group"], rng)
         self.asset_classes[AssetType.BUSINESS] = ac.AssetClass_Business(self.params["ac_business_group"], rng)
-        self.asset_classes[AssetType.BROKERAGE_STOCK] = ac.AssetClass_BrokerageStocks(self.params["ac_brokerage_group"],
-                                                                                      rng)
+        self.asset_classes[AssetType.BROKERAGE_STOCK] = ac.AssetClass_BrokerageStocks(
+            self.params["ac_brokerage_group"], rng)
         self.asset_classes[AssetType.CHECKING_SAVINGS] = ac.AssetClass_CheckingAndSavings(
             self.params["ac_checking_group"], rng)
         self.asset_classes[AssetType.VEHICLE] = ac.AssetClass_Vehicle(self.params["ac_vehicle_group"], rng)
-        self.asset_classes[AssetType.OTHER_ASSETS] = ac.AssetClass_OtherAssets(self.params["ac_otherasset_group"], rng)
-        self.asset_classes[AssetType.OTHER_DEBTS] = ac.AssetClass_AllOtherDebts(self.params["ac_otherdebt_group"], rng)
-        self.asset_classes[AssetType.DB_RETIREMENT_PLAN] = ac.AssetClass_DB_RetirementPlan(self.params["ac_db_group"],
-                                                                                           rng)
-        self.asset_classes[AssetType.DC_RETIREMENT_PLAN] = ac.AssetClass_DC_RetirementPlan(self.params["ac_dc_group"],
-                                                                                           rng)
-
+        self.asset_classes[AssetType.OTHER_ASSETS] = ac.AssetClass_OtherAssets(
+            self.params["ac_otherasset_group"], rng)
+        self.asset_classes[AssetType.OTHER_DEBTS] = ac.AssetClass_AllOtherDebts(
+            self.params["ac_otherdebt_group"], rng)
+        self.asset_classes[AssetType.DB_RETIREMENT_PLAN] = ac.AssetClass_DB_RetirementPlan(
+            self.params["ac_db_group"], rng)
+        self.asset_classes[AssetType.DC_RETIREMENT_PLAN] = ac.AssetClass_DC_RetirementPlan(
+            self.params["ac_dc_group"], rng)
         self.asset_classes[AssetType.GOVT_STUDENT_LOANS] = ac.AssetClass_DC_RetirementPlan(
             self.params["ac_govt_student_loans_group"], rng)
         self.asset_classes[AssetType.EDUCATION_SAVINGS] = ac.AssetClass_DC_RetirementPlan(
             self.params["ac_education_savings_group"], rng)
         self.asset_classes[AssetType.TRADITIONAL_IRA] = ac.AssetClass_DC_RetirementPlan(
             self.params["ac_trad_ira_group"], rng)
-        self.asset_classes[AssetType.ROTH_IRA] = ac.AssetClass_DC_RetirementPlan(self.params["ac_roth_ira_group"], rng)
-
-        self.asset_classes[AssetType.CREDIT_CARD] = ac.AssetClass_CreditCard(self.params["ac_creditcard_group"], rng)
-        self.asset_classes[AssetType.MORTGAGE] = ac.AssetClass_Mortgage(self.params["ac_mortgage_group"], rng)
+        self.asset_classes[AssetType.ROTH_IRA] = ac.AssetClass_DC_RetirementPlan(
+            self.params["ac_roth_ira_group"], rng)
+        self.asset_classes[AssetType.CREDIT_CARD] = ac.AssetClass_CreditCard(
+            self.params["ac_creditcard_group"], rng)
+        self.asset_classes[AssetType.MORTGAGE] = ac.AssetClass_Mortgage(
+            self.params["ac_mortgage_group"], rng)
 
     def setup_holdings(self):
         for asset_type, asset_class in self.asset_classes.items():
-            # Note -- normally this is efficient; at least one person will have an asset of each type. Otherwise, we could get a lisdt of the asset types as the unique values from the holdings
             if (asset_class.needs_setup):
-                # Subset the relevant rows from holdings
-                relevant_holdings_mask = self.holdings.data['asset_type'] == asset_type
-                # Do whatever precalculation is needed on this asset class
-                # Note -- we can probably subset this to particular classes, or create
-                if (sum(relevant_holdings_mask) > 0):
-                    asset_class.setup(self.holdings, relevant_holdings_mask)
+                holdings_mask = self.holdings.data['asset_type'] == asset_type
+                if (sum(holdings_mask) > 0):
+                    asset_class.setup(self.holdings, holdings_mask)
 
     def _update_market_returns(self):
-        """Actualiza los retornos basados en las condiciones actuales de mercado"""
+        """Updates returns based on current market conditions"""
         try:
-            market_performance = self._market_conditions.get("market_performace", "Normal")
+            market_performance = self._market_conditions.get("market_performance", "Normal")
             if market_performance == "Bull":
                 self.params['capital_markets_group'].update({
                     "us_stock_return": 15.0,
@@ -114,26 +115,22 @@ class AssetClassCalculator:
                     "international_stock_sd": 17.0
                 })
 
-            # Actualizar capital markets
             self.capital_markets = CapitalMarkets(self.model.random, self.params['capital_markets_group'])
 
         except Exception as e:
-            print(f"[ERROR] Failed to update market returns: {str(e)}")
+            print(f"[ERROR] Error updating market returns: {str(e)}")
 
     def step(self):
         """
-        Calculate the value and interest accrued for each holding.
+        Calculates the value and accumulated interest for each holding.
         """
         try:
-            # Actualizar retornos según condiciones de mercado actuales
             self._update_market_returns()
 
             for asset_type, asset_class in self.asset_classes.items():
-                # Subset the relevant rows from holdings
-                relevant_holdings_mask = self.holdings.data['asset_type'] == asset_type
-                # Call the step function for the AssetClass
-                if (sum(relevant_holdings_mask) > 0):
-                    asset_class.step(self.holdings, relevant_holdings_mask)
+                holdings_mask = self.holdings.data['asset_type'] == asset_type
+                if (sum(holdings_mask) > 0):
+                    asset_class.step(self.holdings, holdings_mask)
 
         except Exception as e:
-            print(f"[ERROR] Error in AssetClassCalculator step: {str(e)}")
+            print(f"[ERROR] Error in AssetClassCalculator execution: {str(e)}")
