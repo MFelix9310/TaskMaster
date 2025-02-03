@@ -10,6 +10,7 @@ import reacton.ipywidgets as w
 import reacton.core
 import ipyreact
 import plotly.graph_objects as go
+import time
 
 # Data processing and visualization imports
 import pandas as pd
@@ -145,95 +146,257 @@ def on_change_duration(value):
     rs_time.set(value)
 
 
-def on_market_change(value):
-    rs_market_performance.set(value)
-    force_update()
+def validate_parameter(value, param_name, min_val=None, max_val=None):
+    try:
+        if value is None:
+            print(f"[ERROR] No value provided for {param_name}")
+            return False
+            
+        if isinstance(value, str):
+            if value not in ["Bull", "Bear", "Normal"]:
+                print(f"[ERROR] Invalid market scenario: {value}")
+                return False
+        else:
+            try:
+                value = float(value)
+                if min_val is not None and value < min_val:
+                    print(f"[ERROR] {param_name} value {value} below minimum {min_val}")
+                    return False
+                if max_val is not None and value > max_val:
+                    print(f"[ERROR] {param_name} value {value} above maximum {max_val}")
+                    return False
+            except ValueError:
+                print(f"[ERROR] Invalid numeric value for {param_name}: {value}")
+                return False
+                
+        # Validate model state before parameter update
+        if not theModel:
+            print(f"[ERROR] Cannot update {param_name}: Model not initialized")
+            return False
+            
+        if not hasattr(theModel, 'datacollector'):
+            print(f"[ERROR] Cannot update {param_name}: Model missing datacollector")
+            return False
+            
+        if not hasattr(theModel, 'schedule'):
+            print(f"[ERROR] Cannot update {param_name}: Model missing schedule")
+            return False
+            
+        print(f"[DEBUG] Parameter {param_name} validated successfully")
+        return True
+            
+    except Exception as e:
+        print(f"[ERROR] Parameter validation failed: {str(e)}")
+        return False
 
+def on_market_change(value):
+    try:
+        print(f"[INFO] Processing market scenario change: {value}")
+        if validate_parameter(value, "Market Performance"):
+            print(f"[DEBUG] Updating market performance to: {value}")
+            rs_market_performance.set(value)
+            
+            if theModel and hasattr(theModel, 'params'):
+                print(f"[DEBUG] Current market params: {theModel.params.get('market_scenario', 'None')}")
+                theModel.params['market_scenario'] = value
+                print(f"[DEBUG] Updated market params: {theModel.params['market_scenario']}")
+            else:
+                print("[WARNING] Model or params not available for market update")
+            
+            if 'do_reset' in globals():
+                print("[INFO] Resetting simulation for market change")
+                do_reset()
+            
+            update_counter.increment()
+            force_update()
+            solara.lab.use_task.force_update()
+            
+            print(f"[INFO] Market performance update completed successfully: {value}")
+    except Exception as e:
+        print(f"[ERROR] Failed to update market performance: {str(e)}")
+        print(f"[DEBUG] Error details - Type: {type(e).__name__}, Args: {e.args}")
 
 def on_interest_change(value):
-    rs_interest_rate.set(value)
-    force_update()
-
+    try:
+        print(f"[INFO] Processing interest rate change: {value}")
+        if validate_parameter(value, "Interest Rate", min_val=0, max_val=2):
+            print(f"[DEBUG] Updating interest rate to: {value}")
+            rs_interest_rate.set(value)
+            
+            if theModel and hasattr(theModel, 'params'):
+                print(f"[DEBUG] Current interest rate: {theModel.params.get('interest_rate', 'None')}")
+                theModel.params['interest_rate'] = value
+                print(f"[DEBUG] Updated interest rate: {theModel.params['interest_rate']}")
+            else:
+                print("[WARNING] Model or params not available for interest rate update")
+            
+            if 'do_reset' in globals():
+                print("[INFO] Resetting simulation for interest rate change")
+                do_reset()
+            
+            update_counter.increment()
+            force_update()
+            solara.lab.use_task.force_update()
+            
+            print(f"[INFO] Interest rate update completed successfully: {value}")
+    except Exception as e:
+        print(f"[ERROR] Failed to update interest rate: {str(e)}")
+        print(f"[DEBUG] Error details - Type: {type(e).__name__}, Args: {e.args}")
 
 def on_unemployment_change(value):
-    rs_unemployment.set(value)
-    force_update()
+    try:
+        print(f"[INFO] Processing unemployment rate change: {value}")
+        if validate_parameter(value, "Unemployment Rate", min_val=0, max_val=2):
+            print(f"[DEBUG] Updating unemployment rate to: {value}")
+            rs_unemployment.set(value)
+            
+            if theModel and hasattr(theModel, 'params'):
+                print(f"[DEBUG] Current unemployment rate: {theModel.params.get('unemployment_rate', 'None')}")
+                theModel.params['unemployment_rate'] = value
+                print(f"[DEBUG] Updated unemployment rate: {theModel.params['unemployment_rate']}")
+            else:
+                print("[WARNING] Model or params not available for unemployment rate update")
+            
+            if 'do_reset' in globals():
+                print("[INFO] Resetting simulation for unemployment rate change")
+                do_reset()
+            
+            update_counter.increment()
+            force_update()
+            solara.lab.use_task.force_update()
+            
+            print(f"[INFO] Unemployment rate update completed successfully: {value}")
+    except Exception as e:
+        print(f"[ERROR] Failed to update unemployment rate: {str(e)}")
+        print(f"[DEBUG] Error details - Type: {type(e).__name__}, Args: {e.args}")
 
 
 # Main agent portrayal function for geographic visualization
 def agent_portrayal(agent):
-    if isinstance(agent, GeoVizRegion):
-        if agent.adm_level == 1:
-            # Handle different map visualization cases based on selected outcome variable
-            match rs_map_outcome_var.value:
-                case "Financial Wellness":
-                    current_values, _ = theModel.datacollector.get_data_needed_for_dashboard(
-                        "state_level_financial_wellness")
-                    theMin = current_values["median_financial_wellness"].dropna().min()
-                    theMax = current_values["median_financial_wellness"].dropna().max()
-                    tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "median_financial_wellness"]
+    try:
+        if not isinstance(agent, GeoVizRegion):
+            print(f"[WARNING] Invalid agent type: {type(agent)}")
+            return {"color": "grey", "fillOpacity": 0.4}
+            
+        if agent.adm_level != 1:
+            return {"color": "grey", "fillOpacity": 0.4}
+            
+        if not hasattr(theModel, 'datacollector'):
+            print("[ERROR] Model datacollector not initialized")
+            return {"color": "grey", "fillOpacity": 0.4}
+            
+        print(f"[DEBUG] Processing agent portrayal for outcome: {rs_map_outcome_var.value}")
+            
+        # Handle different map visualization cases based on selected outcome variable
+        match rs_map_outcome_var.value:
+            case "Financial Wellness":
+                current_values, _ = theModel.datacollector.get_data_needed_for_dashboard(
+                    "state_level_financial_wellness")
+                if "median_financial_wellness" not in current_values.columns:
+                    print("[WARNING] Missing median_financial_wellness column")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                theMin = current_values["median_financial_wellness"].dropna().min()
+                theMax = current_values["median_financial_wellness"].dropna().max()
+                
+                if pd.isna(theMin) or pd.isna(theMax) or theMin == theMax:
+                    print("[WARNING] Invalid min/max values for financial wellness")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "median_financial_wellness"]
+                
+                if tempSeries.empty:
+                    print(f"[WARNING] No financial wellness data for region {agent.region_id}")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisState = tempSeries.iloc[0]
+                if pd.isna(thisState):
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
+                thisStateLevel = max(0, min(4, int(thisStateLevel)))
+                
+                return {
+                    "stroke": False,
+                    "fillColor": color_gradient_purple[thisStateLevel].hex,
+                    "fillOpacity": 0.4,
+                }
 
-                    if (tempSeries is not None) & (len(tempSeries) > 0):
-                        thisState = tempSeries.iloc[0]
-                        thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
-                        thisStateLevel = 0 if thisStateLevel is None or np.isnan(thisStateLevel) else int(
-                            thisStateLevel)
-                    else:
-                        thisStateLevel = 0
+            case "Retirement Readiness":
+                current_values, _ = theModel.datacollector.get_data_needed_for_dashboard(
+                    "state_level_retirement_readiness_percent")
+                if "median_percent_readiness" not in current_values.columns:
+                    print("[WARNING] Missing median_percent_readiness column")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                theMin = current_values["median_percent_readiness"].dropna().min()
+                theMax = current_values["median_percent_readiness"].dropna().max()
+                
+                if pd.isna(theMin) or pd.isna(theMax) or theMin == theMax:
+                    print("[WARNING] Invalid min/max values for retirement readiness")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "median_percent_readiness"]
+                
+                if tempSeries.empty:
+                    print(f"[WARNING] No retirement readiness data for region {agent.region_id}")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisState = tempSeries.iloc[0]
+                if pd.isna(thisState):
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
+                thisStateLevel = max(0, min(4, int(thisStateLevel)))
+                
+                return {
+                    "stroke": False,
+                    "fillColor": color_gradient_orange[thisStateLevel].hex,
+                    "fillOpacity": 0.4,
+                }
 
-                    return {
-                        "stroke": False,
-                        "fillColor": color_gradient_purple[thisStateLevel].hex,
-                        "fillOpacity": .4,
-                    }
+            case "Debt Levels":
+                current_values, _ = theModel.datacollector.get_data_needed_for_dashboard("state_level_median_debt")
+                if "median_debt" not in current_values.columns:
+                    print("[WARNING] Missing median_debt column")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                current_values['log_debt'] = np.log(current_values["median_debt"] + 1).fillna(0)
+                theMin = current_values["log_debt"].dropna().min()
+                theMax = current_values["log_debt"].dropna().max()
+                
+                if pd.isna(theMin) or pd.isna(theMax) or theMin == theMax:
+                    print("[WARNING] Invalid min/max values for debt levels")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "log_debt"]
+                
+                if tempSeries.empty:
+                    print(f"[WARNING] No debt data for region {agent.region_id}")
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisState = tempSeries.iloc[0]
+                if pd.isna(thisState):
+                    return {"color": "grey", "fillOpacity": 0.4}
+                    
+                thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
+                thisStateLevel = max(0, min(4, int(thisStateLevel)))
+                
+                return {
+                    "stroke": False,
+                    "fillColor": color_gradient_green[thisStateLevel].hex,
+                    "fillOpacity": 0.4,
+                }
 
-                case "Retirement Readiness":
-                    current_values, _ = theModel.datacollector.get_data_needed_for_dashboard(
-                        "state_level_retirement_readiness_percent")
-                    theMin = current_values["median_percent_readiness"].dropna().min()
-                    theMax = current_values["median_percent_readiness"].dropna().max()
-                    tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "median_percent_readiness"]
-
-                    if (tempSeries is not None) & (len(tempSeries) > 0):
-                        thisState = tempSeries.iloc[0]
-                        thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
-                        thisStateLevel = 0 if thisStateLevel is None or np.isnan(thisStateLevel) else int(
-                            thisStateLevel)
-                    else:
-                        thisStateLevel = 0
-
-                    return {
-                        "stroke": False,
-                        "fillColor": color_gradient_orange[thisStateLevel].hex,
-                        "fillOpacity": .4,
-                    }
-
-                case "Debt Levels":
-                    current_values, _ = theModel.datacollector.get_data_needed_for_dashboard("state_level_median_debt")
-                    current_values['log_debt'] = np.log(current_values["median_debt"] + 1).fillna(0)
-                    theMin = current_values["log_debt"].dropna().min()
-                    theMax = current_values["log_debt"].dropna().max()
-                    tempSeries = current_values.loc[current_values.adm1 == agent.region_id, "log_debt"]
-
-                    if (tempSeries is not None) & (len(tempSeries) > 0):
-                        thisState = tempSeries.iloc[0]
-                        thisStateLevel = np.round((thisState - theMin) / (theMax - theMin)) * 4
-                        thisStateLevel = 0 if thisStateLevel is None or np.isnan(thisStateLevel) else int(
-                            thisStateLevel)
-                    else:
-                        thisStateLevel = 0
-
-                    return {
-                        "stroke": False,
-                        "fillColor": color_gradient_green[thisStateLevel].hex,
-                        "fillOpacity": .4,
-                    }
-
-                case _:
-                    return {
-                        "color": "grey",
-                        "fillOpacity": .4,
-                    }
+            case _:
+                return {
+                    "color": "grey",
+                    "fillOpacity": 0.4,
+                }
+                
+    except Exception as e:
+        print(f"[ERROR] Error in agent_portrayal: {str(e)}")
+        return {"color": "grey", "fillOpacity": 0.4}
 
 
 # Simulation settings component
@@ -428,74 +591,172 @@ def Custom_Outcome_Details(rs_custom_var, rs_custom_groupby):
 
 # Create dynamic bar chart visualization
 def create_dynamic_bar_chart(data_series, colors, width=None, height=None, yaxis_range=None):
-    fig = go.Figure()
+    try:
+        if not isinstance(data_series, (list, np.ndarray)):
+            print(f"[ERROR] Invalid data_series type: {type(data_series)}")
+            return None
+            
+        if not data_series:
+            print("[WARNING] Empty data series")
+            return None
+            
+        if not colors or len(colors) != len(data_series):
+            print(f"[ERROR] Colors length ({len(colors) if colors else 0}) doesn't match data series length ({len(data_series)})")
+            return None
+            
+        # Validate data values
+        valid_data = []
+        valid_colors = []
+        for i, (value, color) in enumerate(zip(data_series, colors)):
+            try:
+                value = float(value)
+                if np.isnan(value) or np.isinf(value):
+                    print(f"[WARNING] Invalid value at position {i}: {value}")
+                    continue
+                valid_data.append(value)
+                valid_colors.append(color)
+            except (ValueError, TypeError) as e:
+                print(f"[WARNING] Error converting value at position {i}: {str(e)}")
+                continue
+                
+        if not valid_data:
+            print("[ERROR] No valid data points after validation")
+            return None
+            
+        print(f"[DEBUG] Creating chart with {len(valid_data)} valid data points")
+        
+        fig = go.Figure()
 
-    # Add bar trace to figure
-    fig.add_trace(
-        go.Bar(
-            x=[str(i + 1) for i in range(len(data_series))],
-            y=data_series,
-            marker=dict(color=colors),
-            width=1.0
+        # Add bar trace to figure
+        fig.add_trace(
+            go.Bar(
+                x=[str(i + 1) for i in range(len(valid_data))],
+                y=valid_data,
+                marker=dict(color=valid_colors),
+                width=1.0
+            )
         )
-    )
 
-    # Calculate dynamic Y-axis range
-    if not yaxis_range:
-        max_val = max(data_series) if data_series else 1
-        min_val = min(data_series) if data_series else 0
-        range_margin = (max_val - min_val) * 0.1
-        yaxis_range = [max(min_val - range_margin, 0), max_val + range_margin]
+        # Calculate dynamic Y-axis range with validation
+        if not yaxis_range:
+            try:
+                max_val = max(valid_data)
+                min_val = min(valid_data)
+                if max_val == min_val:
+                    range_margin = max(abs(max_val) * 0.1, 1.0)
+                else:
+                    range_margin = (max_val - min_val) * 0.1
+                yaxis_range = [max(min_val - range_margin, 0), max_val + range_margin]
+            except Exception as e:
+                print(f"[WARNING] Error calculating axis range: {str(e)}")
+                yaxis_range = [0, 1]
 
-    # Update layout for consistent styling
-    fig.update_layout(
-        autosize=True,
-        width=width,
-        height=height,
-        margin=dict(l=0, r=0, t=0, b=0),
-        xaxis=dict(showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(showgrid=False, zeroline=False, visible=False, range=yaxis_range),
-        template="plotly_white",
-        showlegend=False,
-        dragmode=False,
-        xaxis_fixedrange=True,
-        yaxis_fixedrange=True,
-        bargap=0,
-        barmode="stack"
-    )
-    return fig
+        # Update layout for consistent styling
+        fig.update_layout(
+            autosize=True,
+            width=width,
+            height=height,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+            yaxis=dict(showgrid=False, zeroline=False, visible=False, range=yaxis_range),
+            template="plotly_white",
+            showlegend=False,
+            dragmode=False,
+            xaxis_fixedrange=True,
+            yaxis_fixedrange=True,
+            bargap=0,
+            barmode="stack"
+        )
+        
+        print("[DEBUG] Chart created successfully")
+        return fig
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to create dynamic bar chart: {str(e)}")
+        return None
 
 
 # Create density chart visualization
 def create_density_chart(data_series, width=None, height=None):
-    fig = go.Figure()
+    try:
+        if not isinstance(data_series, (list, np.ndarray)):
+            print(f"[ERROR] Invalid data_series type: {type(data_series)}")
+            return None
+            
+        if not data_series:
+            print("[WARNING] Empty data series")
+            return None
+            
+        # Validate data values
+        valid_data = []
+        for i, value in enumerate(data_series):
+            try:
+                value = float(value)
+                if np.isnan(value) or np.isinf(value):
+                    print(f"[WARNING] Invalid value at position {i}: {value}")
+                    continue
+                if value < 0:
+                    print(f"[WARNING] Negative value at position {i}: {value}")
+                    continue
+                valid_data.append(value)
+            except (ValueError, TypeError) as e:
+                print(f"[WARNING] Error converting value at position {i}: {str(e)}")
+                continue
+                
+        if not valid_data:
+            print("[ERROR] No valid data points after validation")
+            return None
+            
+        print(f"[DEBUG] Creating density chart with {len(valid_data)} valid data points")
+        
+        fig = go.Figure()
 
-    # Add area trace to figure
-    fig.add_trace(
-        go.Scatter(
-            x=np.arange(len(data_series)),
-            y=data_series,
-            fill='tozeroy',
-            mode='lines',
-            line=dict(color='rgba(255, 185, 9, 0.8)')
+        # Add area trace to figure with validated data
+        fig.add_trace(
+            go.Scatter(
+                x=np.arange(len(valid_data)),
+                y=valid_data,
+                fill='tozeroy',
+                mode='lines',
+                line=dict(color='rgba(255, 185, 9, 0.8)')
+            )
         )
-    )
 
-    # Update layout for consistent styling
-    fig.update_layout(
-        autosize=True,
-        width=width,
-        height=height,
-        margin=dict(l=0, r=0, t=0, b=0),
-        xaxis=dict(showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(showgrid=False, zeroline=False, visible=False),
-        template="plotly_white",
-        showlegend=False,
-        dragmode=False,
-        xaxis_fixedrange=True,
-        yaxis_fixedrange=True
-    )
-    return fig
+        # Calculate dynamic Y-axis range with validation
+        try:
+            max_val = max(valid_data)
+            min_val = min(valid_data)
+            if max_val == min_val:
+                range_margin = max(abs(max_val) * 0.1, 1.0)
+                yaxis_range = [0, max_val + range_margin]
+            else:
+                range_margin = (max_val - min_val) * 0.1
+                yaxis_range = [max(min_val - range_margin, 0), max_val + range_margin]
+        except Exception as e:
+            print(f"[WARNING] Error calculating axis range: {str(e)}")
+            yaxis_range = [0, 1]
+
+        # Update layout for consistent styling
+        fig.update_layout(
+            autosize=True,
+            width=width,
+            height=height,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+            yaxis=dict(showgrid=False, zeroline=False, visible=False, range=yaxis_range),
+            template="plotly_white",
+            showlegend=False,
+            dragmode=False,
+            xaxis_fixedrange=True,
+            yaxis_fixedrange=True
+        )
+        
+        print("[DEBUG] Density chart created successfully")
+        return fig
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to create density chart: {str(e)}")
+        return None
 
 
 # Main function for displaying summary data in bar format
@@ -503,7 +764,7 @@ def Summary_Data_Bar():
     global wealth_gap_series, wealth_gap_colors, net_wealth_series, net_wealth_colors, debt_series
 
     try:
-        # Get current tick and summary data
+        print("[DEBUG] Starting summary data update")
         tick = update_counter.get()
         summary_data = ui_controller.get_summary_data()
 
@@ -511,24 +772,50 @@ def Summary_Data_Bar():
             print("[WARNING] No summary data available")
             return
 
-        # Extract and validate current values from summary data
-        current_wealth_gap_value = summary_data.get("wealth_gap")
-        current_net_wealth_value = summary_data.get("net_wealth")
-        current_debt_value = summary_data.get("debt")
-        current_retirement_ready_percent = summary_data.get("retirement_ready_percent")
-
-        # Validate all required values are present and valid
-        if any(v is None or (isinstance(v, (int, float)) and np.isnan(v)) 
-               for v in [current_wealth_gap_value, current_net_wealth_value, 
-                        current_debt_value, current_retirement_ready_percent]):
-            print("[WARNING] Invalid or missing values in summary data")
+        # Define required fields with their labels for validation
+        required_fields = {
+            "wealth_gap": "Wealth Gap",
+            "net_wealth": "Net Wealth",
+            "debt": "Debt",
+            "retirement_ready_percent": "Retirement Ready Percentage"
+        }
+        
+        # Validate and convert all required fields
+        current_values = {}
+        for field, label in required_fields.items():
+            value = summary_data.get(field)
+            
+            if value is None:
+                print(f"[WARNING] Missing {label} in summary data")
+                return
+                
+            try:
+                value = float(value)
+                if np.isnan(value) or np.isinf(value):
+                    print(f"[WARNING] Invalid {label} value: {value}")
+                    return
+                if value < 0:
+                    print(f"[WARNING] Negative {label} value: {value}")
+                    return
+            except (ValueError, TypeError) as e:
+                print(f"[WARNING] Could not convert {label} to float: {value}")
+                print(f"[DEBUG] Conversion error: {str(e)}")
+                return
+                
+            current_values[field] = value
+            print(f"[DEBUG] Validated {label}: {value}")
+        
+        # Assign validated values
+        current_wealth_gap_value = current_values["wealth_gap"]
+        current_net_wealth_value = current_values["net_wealth"]
+        current_debt_value = current_values["debt"]
+        current_retirement_ready_percent = current_values["retirement_ready_percent"]
+        
+        if current_retirement_ready_percent > 100:
+            print(f"[WARNING] Invalid retirement percentage: {current_retirement_ready_percent}")
             return
-
-        # Set default values if needed
-        current_wealth_gap_value = float(current_wealth_gap_value)
-        current_net_wealth_value = float(current_net_wealth_value)
-        current_debt_value = float(current_debt_value)
-        current_retirement_ready_percent = float(current_retirement_ready_percent)
+            
+        print("[DEBUG] All summary data values validated successfully")
 
         # Update series with new values if they have changed
         try:
@@ -645,20 +932,79 @@ def Summary_Data_Bar():
 # Grouped bar chart component for asset analysis
 @solara.component
 def GroupedBarChart():
-    # Get wealth data by asset and race
-    data = theModel.datacollector.collect_wealth_by_asset_and_race(theModel)
-    df = pd.DataFrame(data)
+    try:
+        print("[DEBUG] Starting GroupedBarChart creation")
+        
+        # Validate model and datacollector
+        if not hasattr(theModel, 'datacollector'):
+            print("[ERROR] Model datacollector not initialized")
+            return
+            
+        try:
+            data = theModel.datacollector.collect_wealth_by_asset_and_race(theModel)
+        except Exception as e:
+            print(f"[ERROR] Failed to collect wealth data: {str(e)}")
+            return
+            
+        if not data:
+            print("[WARNING] No wealth data available")
+            return
+            
+        # Convert to DataFrame with validation
+        try:
+            df = pd.DataFrame(data)
+            
+            required_columns = ['asset_type', 'median_value', 'race']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                print(f"[ERROR] Missing required columns: {missing_columns}")
+                return
+                
+            # Validate data types and values
+            if df['median_value'].isna().any():
+                print("[WARNING] Found NaN values in median_value column")
+                df = df.dropna(subset=['median_value'])
+                
+            if df.empty:
+                print("[WARNING] No valid data points after cleaning")
+                return
+                
+            print(f"[DEBUG] Processing {len(df)} valid data points")
+                
+        except Exception as e:
+            print(f"[ERROR] Failed to process wealth data: {str(e)}")
+            return
 
-    # Configure chart parameters
-    x_col = 'asset_type'
-    y_col = 'median_value'
-    group_col = 'race'
-    filter_by = ['White', 'Black', 'Hispanic', 'Asian']
-    title = 'Median Asset Value, by Group'
-
-    # Create and display grouped bar chart
-    fig = GraphicsUtils.GroupedGraphic(df, x_col, y_col, group_col, title, filter_by=filter_by)
-    solara.FigurePlotly(fig)
+        # Configure chart parameters
+        x_col = 'asset_type'
+        y_col = 'median_value'
+        group_col = 'race'
+        filter_by = ['White', 'Black', 'Hispanic', 'Asian']
+        title = 'Median Asset Value, by Group'
+        
+        # Validate filtered data
+        df_filtered = df[df[group_col].isin(filter_by)]
+        if df_filtered.empty:
+            print(f"[WARNING] No data available for specified groups: {filter_by}")
+            return
+            
+        print("[DEBUG] Creating grouped bar chart")
+        
+        try:
+            # Create and display grouped bar chart
+            fig = GraphicsUtils.GroupedGraphic(df_filtered, x_col, y_col, group_col, title, filter_by=filter_by)
+            if fig is None:
+                print("[ERROR] Failed to create grouped bar chart")
+                return
+                
+            print("[DEBUG] Grouped bar chart created successfully")
+            solara.FigurePlotly(fig)
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to create or display chart: {str(e)}")
+            
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in GroupedBarChart: {str(e)}")
 
 
 # Component for displaying informative cards with financial data
@@ -881,18 +1227,68 @@ def FloatingPlayBar(
     # Async function to handle simulation steps
     async def step():
         try:
+            print("[INFO] Starting simulation loop")
+            print(f"[DEBUG] Initial state - Playing: {playing.value}, Running: {running.value}")
+            
             while playing.value and running.value:
                 try:
+                    print("[INFO] Executing simulation step")
+                    print(f"[DEBUG] Model state before step: Schedule steps={model.value.schedule.steps if hasattr(model.value, 'schedule') else 'N/A'}")
+                    
                     do_step()
-                    # Add small delay to prevent overwhelming the websocket
-                    await asyncio.sleep(0.1)
+                    update_counter.increment()
+                    
+                    print("[DEBUG] Forcing UI updates")
+                    force_update()
+                    solara.lab.use_task.force_update()
+                    
+                    print("[DEBUG] Adding controlled delay for UI sync")
+                    await asyncio.sleep(0.5)
+                    
+                    # Validate model state
+                    if not model.value:
+                        print("[ERROR] Model became None during simulation")
+                        print("[DEBUG] Last known model type:", type(model.value))
+                        playing.value = False
+                        break
+                        
+                    if not hasattr(model.value, 'running'):
+                        print("[ERROR] Model missing 'running' attribute")
+                        print("[DEBUG] Available attributes:", dir(model.value))
+                        playing.value = False
+                        break
+                        
+                    if not hasattr(model.value, 'datacollector'):
+                        print("[ERROR] Model missing datacollector")
+                        print("[DEBUG] Available attributes:", dir(model.value))
+                        playing.value = False
+                        break
+                        
+                    if not model.value.datacollector:
+                        print("[ERROR] Datacollector is None")
+                        playing.value = False
+                        break
+                        
+                    # Log simulation progress
+                    if hasattr(model.value, 'schedule'):
+                        print(f"[INFO] Step completed - Current step: {model.value.schedule.steps}")
+                    
                 except Exception as e:
                     print(f"[ERROR] Step execution error: {str(e)}")
+                    print(f"[DEBUG] Error type: {type(e).__name__}")
+                    print(f"[DEBUG] Error details: {e.args}")
                     playing.value = False
+                    running.value = False
                     break
+                    
+            print(f"[INFO] Simulation loop ended - Final state: Playing={playing.value}, Running={running.value}")
+            
         except Exception as e:
-            print(f"[ERROR] Simulation loop error: {str(e)}")
+            print(f"[ERROR] Critical simulation loop error: {str(e)}")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            print(f"[DEBUG] Error details: {e.args}")
             playing.value = False
+            running.value = False
 
     # Set up task for handling simulation steps
     solara.lab.use_task(
@@ -902,32 +1298,253 @@ def FloatingPlayBar(
     # Function to advance simulation by one step
     def do_step():
         try:
-            model.value.step()
-            running.value = model.value.running
-            force_update()
+            print("[INFO] Starting simulation step")
+            print(f"[DEBUG] Current model state - Running: {running.value}")
+            
+            # Validate model state
+            if not model.value:
+                print("[ERROR] Model not initialized")
+                print("[DEBUG] Model value is None")
+                return
+                
+            if not hasattr(model.value, 'step'):
+                print("[ERROR] Model missing step method")
+                print("[DEBUG] Available methods:", dir(model.value))
+                return
+                
+            if not hasattr(model.value, 'datacollector'):
+                print("[ERROR] Model datacollector not initialized")
+                print("[DEBUG] Available attributes:", dir(model.value))
+                return
+                
+            if not hasattr(model.value, 'schedule'):
+                print("[ERROR] Model schedule not initialized")
+                print("[DEBUG] Available attributes:", dir(model.value))
+                return
+                
+            # Execute model step with validation
+            try:
+                print("[INFO] Executing model step")
+                print(f"[DEBUG] Pre-step schedule state: {model.value.schedule.steps}")
+                
+                model.value.step()
+                
+                # Validate step execution and data
+                if not model.value.schedule.steps:
+                    print("[WARNING] Model step did not advance schedule")
+                    print("[DEBUG] Schedule state:", model.value.schedule.steps)
+                    return
+                    
+                print(f"[DEBUG] Post-step schedule state: {model.value.schedule.steps}")
+                
+                # Verify datacollector state
+                if not model.value.datacollector.model_vars:
+                    print("[ERROR] Model variables not available")
+                    print("[DEBUG] Datacollector state:", dir(model.value.datacollector))
+                    return
+                    
+                # Update running state with validation
+                running.value = getattr(model.value, 'running', False)
+                if not isinstance(running.value, bool):
+                    print(f"[WARNING] Invalid running state type: {type(running.value)}")
+                    print(f"[DEBUG] Running value: {running.value}")
+                    running.value = False
+                    return
+                    
+                # Force UI updates and increment counter
+                print("[INFO] Applying UI updates")
+                update_counter.increment()
+                force_update()
+                solara.lab.use_task.force_update()
+                
+                # Validate data collection
+                df = model.value.datacollector.get_model_vars_dataframe()
+                if not df.empty:
+                    print("[INFO] Model variables updated successfully")
+                    print(f"[DEBUG] DataFrame shape: {df.shape}")
+                else:
+                    print("[WARNING] Model variables not updated")
+                    print("[DEBUG] Empty DataFrame detected")
+                    return
+                    
+                print(f"[INFO] Model step completed successfully (Step {model.value.schedule.steps})")
+                
+            except Exception as e:
+                print(f"[ERROR] Error during model step execution: {str(e)}")
+                print(f"[DEBUG] Error type: {type(e).__name__}")
+                print(f"[DEBUG] Error details: {e.args}")
+                running.value = False
+                return
+                
+        except AttributeError as e:
+            print(f"[ERROR] Invalid model structure: {str(e)}")
+            print(f"[DEBUG] Error details: {e.args}")
+            running.value = False
         except Exception as e:
-            print(f"[ERROR] Model step error: {str(e)}")
+            print(f"[ERROR] Unexpected error in do_step: {str(e)}")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            print(f"[DEBUG] Error details: {e.args}")
+            running.value = False
             raise
 
     # Function to reset simulation to initial state
     def do_reset():
         try:
+            print("[INFO] Starting model reset")
+            print(f"[DEBUG] Current state - Playing: {playing.value}, Running: {running.value}")
             global theModel
+            
+            # Stop simulation and update state
             playing.value = False
             running.value = True
-
-            reset_series()  # Reset all data series
-            ui_controller.do_reset()
-            theModel = ui_model.sim_model
-            model.value = theModel
-            force_update()
-            print("[DEBUG] Model reset completed successfully")
+            
+            try:
+                # Reset data series and model state
+                print("[INFO] Resetting simulation state")
+                reset_series()
+                
+                print("[INFO] Resetting UI controller")
+                ui_controller.do_reset()
+                
+                # Initialize new model with current parameters
+                print("[INFO] Initializing new model")
+                print("[DEBUG] Previous model state:", "None" if not theModel else "Exists")
+                
+                theModel = ui_model.sim_model
+                
+                # Validate new model and its components
+                if not theModel:
+                    print("[ERROR] Failed to create new model")
+                    print("[DEBUG] ui_model.sim_model returned None")
+                    return
+                    
+                if not hasattr(theModel, 'datacollector'):
+                    print("[ERROR] New model missing datacollector")
+                    print("[DEBUG] Available attributes:", dir(theModel))
+                    return
+                    
+                if not hasattr(theModel, 'schedule'):
+                    print("[ERROR] New model missing schedule")
+                    print("[DEBUG] Available attributes:", dir(theModel))
+                    return
+                    
+                if not hasattr(theModel, 'running'):
+                    print("[ERROR] New model missing running state")
+                    print("[DEBUG] Available attributes:", dir(theModel))
+                    return
+                    
+                # Verify initial data state
+                if not theModel.datacollector.model_vars:
+                    print("[ERROR] Model variables not initialized")
+                    print("[DEBUG] Datacollector state:", dir(theModel.datacollector))
+                    return
+                    
+                # Update model reference
+                print("[INFO] Updating model reference")
+                print("[DEBUG] Old model reference:", id(model.value) if model.value else "None")
+                model.value = theModel
+                print("[DEBUG] New model reference:", id(model.value))
+                
+                # Force comprehensive UI update
+                print("[INFO] Applying UI updates")
+                update_counter.increment()
+                force_update()
+                solara.lab.use_task.force_update()
+                
+                # Verify UI update success
+                if model.value != theModel:
+                    print("[ERROR] Model reference update failed")
+                    print(f"[DEBUG] References - Expected: {id(theModel)}, Actual: {id(model.value)}")
+                    return
+                    
+                print("[INFO] Model reset completed successfully")
+                print(f"[DEBUG] Final state - Playing: {playing.value}, Running: {running.value}")
+                
+            except Exception as e:
+                print(f"[ERROR] Error during model reset operations: {str(e)}")
+                print(f"[DEBUG] Error type: {type(e).__name__}")
+                print(f"[DEBUG] Error details: {e.args}")
+                running.value = False
+                raise
+                
         except Exception as e:
-            print(f"[ERROR] Error during reset: {str(e)}")
+            print(f"[ERROR] Critical error during reset: {str(e)}")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            print(f"[DEBUG] Error details: {e.args}")
+            running.value = False
+            playing.value = False
 
     # Function to toggle play/pause state
     def do_play_pause():
-        playing.value = not playing.value
+        try:
+            print("[INFO] Processing play/pause toggle request")
+            print(f"[DEBUG] Initial state - Playing: {playing.value}, Running: {running.value}")
+            
+            # Validate model state before toggling
+            if not model.value:
+                print("[ERROR] Cannot toggle play/pause: Model not initialized")
+                print("[DEBUG] Model value is None")
+                playing.value = False
+                return
+                
+            if not hasattr(model.value, 'running'):
+                print("[ERROR] Cannot toggle play/pause: Invalid model state")
+                print("[DEBUG] Available attributes:", dir(model.value))
+                playing.value = False
+                return
+                
+            if not hasattr(model.value, 'datacollector') or not model.value.datacollector:
+                print("[ERROR] Cannot toggle play/pause: Invalid datacollector")
+                print("[DEBUG] Available attributes:", dir(model.value))
+                playing.value = False
+                return
+                
+            if not hasattr(model.value, 'schedule'):
+                print("[ERROR] Cannot toggle play/pause: Invalid schedule")
+                print("[DEBUG] Available attributes:", dir(model.value))
+                playing.value = False
+                return
+                
+            # Toggle play state
+            previous_state = playing.value
+            playing.value = not playing.value
+            print(f"[INFO] Toggling play state from {previous_state} to {playing.value}")
+            
+            # Reset update counter and force UI refresh
+            print("[INFO] Applying UI updates")
+            update_counter.increment()
+            force_update()
+            solara.lab.use_task.force_update()
+            
+            # Verify model state after toggle
+            if playing.value:
+                print("[DEBUG] Validating model state after play")
+                if not model.value.running:
+                    print("[ERROR] Model not in running state after play")
+                    print(f"[DEBUG] Model running state: {model.value.running}")
+                    playing.value = False
+                    return
+                    
+                if not model.value.datacollector.model_vars:
+                    print("[ERROR] Model variables not available after play")
+                    print("[DEBUG] Available collectors:", dir(model.value.datacollector))
+                    playing.value = False
+                    return
+                    
+                print("[INFO] Model validation successful, simulation will start")
+                if hasattr(model.value, 'schedule'):
+                    print(f"[DEBUG] Starting at step: {model.value.schedule.steps}")
+            else:
+                print("[INFO] Simulation paused")
+                if hasattr(model.value, 'schedule'):
+                    print(f"[DEBUG] Paused at step: {model.value.schedule.steps}")
+            
+        except Exception as e:
+            print(f"[ERROR] Error toggling play/pause: {str(e)}")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            print(f"[DEBUG] Error details: {e.args}")
+            playing.value = False
+            running.value = False
 
     # Render control buttons
     with solara.Row(justify="left"):
@@ -965,15 +1582,102 @@ def Welcome():
 # Component for displaying simulation visualization
 @solara.component
 def SimDisplay(model_reactive, model_params, components):
-    reactive_model_parameters = solara.use_reactive({})
-
-    # Display model components and control bar
-    WrappedComponentsView(components, model_reactive.value)
-    FloatingPlayBar(
-        model_reactive,
-        model_parameters=model_params,
-        play_interval=1,
-    )
+    try:
+        print("[INFO] Initializing SimDisplay component")
+        reactive_model_parameters = solara.use_reactive({})
+        update_tick = solara.use_reactive(0)
+        last_update = solara.use_reactive(0)
+        
+        # Validate model state and components
+        if not model_reactive:
+            print("[ERROR] Model reactive object is None")
+            return
+            
+        if not model_reactive.value:
+            print("[ERROR] Model value is None in SimDisplay")
+            print(f"[DEBUG] Model reactive type: {type(model_reactive)}")
+            return
+            
+        if not components:
+            print("[ERROR] No visualization components provided")
+            print(f"[DEBUG] Components value: {components}")
+            return
+            
+        if not hasattr(model_reactive.value, 'datacollector'):
+            print("[ERROR] Model missing datacollector in SimDisplay")
+            print(f"[DEBUG] Available model attributes: {dir(model_reactive.value)}")
+            return
+            
+        print(f"[INFO] SimDisplay initialized with {len(components)} components")
+        print(f"[DEBUG] Initial model params: {model_params}")
+            
+        # Set up automatic UI refresh on model changes
+        def on_model_change():
+            try:
+                current_time = time.time()
+                time_since_last = current_time - last_update.value
+                
+                if time_since_last < 0.1:  # Limit update frequency
+                    print(f"[DEBUG] Skipping update, too soon ({time_since_last:.3f}s)")
+                    return
+                    
+                print("[INFO] Processing model state change")
+                print(f"[DEBUG] Previous update tick: {update_tick.value}")
+                
+                update_tick.value += 1
+                last_update.value = current_time
+                
+                # Verify model state before update
+                if not model_reactive.value:
+                    print("[ERROR] Model became None during update")
+                    return
+                    
+                if not hasattr(model_reactive.value, 'datacollector'):
+                    print("[ERROR] Model lost datacollector during update")
+                    return
+                    
+                if not model_reactive.value.datacollector.model_vars:
+                    print("[ERROR] No model variables available for display")
+                    print("[DEBUG] Available collectors:", dir(model_reactive.value.datacollector))
+                    return
+                    
+                # Force UI updates through multiple mechanisms
+                print("[DEBUG] Applying UI updates")
+                force_update()
+                solara.lab.use_task.force_update()
+                update_counter.increment()
+                
+                print(f"[INFO] Display updated successfully (tick: {update_tick.value})")
+                print(f"[DEBUG] Time since last update: {time_since_last:.3f}s")
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to update display: {str(e)}")
+                print(f"[DEBUG] Error type: {type(e).__name__}")
+                print(f"[DEBUG] Error details: {e.args}")
+            
+        # Register model change callback with dependencies
+        print("[INFO] Registering model change callback")
+        solara.use_effect(
+            on_model_change,
+            [model_reactive.value, update_counter.get()]
+        )
+        
+        print("[DEBUG] Rendering simulation components")
+        # Display model components and control bar with reactive updates
+        with solara.Column():
+            # Force re-render on update_tick changes
+            if update_tick.value >= 0:  # Always true, but forces reactivity
+                with solara.Card(style={"backgroundColor": "white", "padding": "1rem"}):
+                    WrappedComponentsView(components, model_reactive.value)
+            FloatingPlayBar(
+                model_reactive,
+                model_parameters=model_params,
+                play_interval=1,
+            )
+        
+    except Exception as e:
+        print(f"[ERROR] Error in SimDisplay: {str(e)}")
+        return
 
 
 # Component for model visualization
